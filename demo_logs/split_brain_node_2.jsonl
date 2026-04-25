@@ -1,0 +1,6 @@
+{"lamport_ts": 6, "wall_time_us": 1773443622773134, "node_id": 2, "event_type": "vote_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 7, "wall_time_us": 1773443622778134, "node_id": 2, "event_type": "vote_granted", "from_node": 2, "to_node": 0, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 14, "wall_time_us": 1773443622873134, "node_id": 2, "event_type": "log_append_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 1, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 17, "wall_time_us": 1773443622908134, "node_id": 2, "event_type": "commit", "from_node": 2, "to_node": -1, "term": 1, "log_index": 1, "commit_index": 1, "role": "follower"}
+{"lamport_ts": 22, "wall_time_us": 1773443623225134, "node_id": 2, "event_type": "vote_recv", "from_node": 1, "to_node": 2, "term": 2, "log_index": 1, "commit_index": 1, "role": "follower"}
+{"lamport_ts": 23, "wall_time_us": 1773443623228134, "node_id": 2, "event_type": "vote_granted", "from_node": 2, "to_node": 1, "term": 2, "log_index": 1, "commit_index": 1, "role": "follower"}

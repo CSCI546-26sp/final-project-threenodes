@@ -1,0 +1,52 @@
+name: CMake
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - 'rust/**'
+  pull_request:
+    branches: [ "main" ]
+    paths-ignore:
+      - 'rust/**'
+  schedule:
+    - cron: '17 17 * * 2'
+
+permissions:
+  security-events: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        preset: ["Release", "Debug"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: cpp
+
+    - name: Configure CMake
+      run: cmake --preset ${{matrix.preset}}
+
+    - name: build
+      run: cmake --build --preset ${{matrix.preset}}
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: cmake --preset Windows
+  
+      - name: build
+        run: cmake --build --preset Windows

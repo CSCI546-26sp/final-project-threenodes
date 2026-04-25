@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RaftScope – Causal Space-Time Diagram</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    /* ─── Layout ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Segoe UI", system-ui, sans-serif; background: #0f1117; color: #e0e0e0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    header { background: #1a1d27; padding: 10px 20px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #2a2d3a; flex-shrink: 0; }
+    header h1 { font-size: 1.15rem; font-weight: 700; color: #a78bfa; letter-spacing: 0.5px; }
+    header .subtitle { font-size: 0.78rem; color: #888; }
+
+    #controls { background: #151821; padding: 8px 20px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #2a2d3a; flex-shrink: 0; }
+    #controls label { font-size: 0.78rem; color: #aaa; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    #controls input[type="checkbox"] { accent-color: #a78bfa; cursor: pointer; }
+    #controls button { background: #a78bfa; color: #fff; border: none; border-radius: 4px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; transition: background 0.15s; }
+    #controls button:hover { background: #8b5cf6; }
+    #controls button.secondary { background: #2a2d3a; }
+    #controls button.secondary:hover { background: #3a3d4a; }
+    #controls .sep { width: 1px; height: 20px; background: #2a2d3a; margin: 0 4px; }
+
+    #load-zone { border: 2px dashed #2a2d3a; border-radius: 8px; padding: 8px 18px; font-size: 0.78rem; color: #666; cursor: pointer; transition: border-color 0.2s, color 0.2s; white-space: nowrap; }
+    #load-zone:hover, #load-zone.drag-over { border-color: #a78bfa; color: #a78bfa; }
+    #file-input { display: none; }
+
+    #main { display: flex; flex: 1; overflow: hidden; }
+    #canvas-wrap { flex: 1; overflow: auto; position: relative; }
+    #sidebar { width: 280px; background: #151821; border-left: 1px solid #2a2d3a; overflow-y: auto; flex-shrink: 0; }
+    #sidebar h2 { font-size: 0.8rem; color: #888; padding: 10px 14px 6px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #2a2d3a; }
+    #event-detail { padding: 12px 14px; font-size: 0.76rem; line-height: 1.7; color: #ccc; }
+    #event-detail .field { display: flex; gap: 6px; }
+    #event-detail .k { color: #a78bfa; min-width: 100px; }
+    #event-detail .v { color: #e0e0e0; word-break: break-all; }
+    #event-detail .no-sel { color: #555; font-style: italic; }
+
+    #legend { padding: 10px 14px; border-top: 1px solid #2a2d3a; }
+    #legend h2 { font-size: 0.8rem; color: #888; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 0.74rem; color: #bbb; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+    #empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: #444; }
+    #empty-state svg { width: 64px; height: 64px; opacity: 0.3; }
+    #empty-state p { font-size: 0.9rem; }
+
+    svg.diagram { display: block; }
+    .timeline { stroke: #2a2d3a; stroke-width: 1.5; }
+    .node-label { fill: #a78bfa; font-size: 13px; font-weight: 600; }
+    .time-axis line { stroke: #2a2d3a; stroke-dasharray: 2,4; }
+    .time-axis text { fill: #444; font-size: 10px; }
+
+    .event-circle { cursor: pointer; transition: r 0.1s; stroke-width: 1.5; }
+    .event-circle:hover { r: 9; }
+    .event-circle.selected { stroke: #fff !important; stroke-width: 2.5; }
+
+    .arrow { fill: none; stroke-width: 1.5; marker-end: url(#arrowhead); opacity: 0.75; }
+    .arrow:hover { opacity: 1; stroke-width: 2.5; }
+
+    .arrow-label { font-size: 9px; fill: #888; pointer-events: none; }
+
+    /* ─── Tooltip ─────────────────────────────────────────────────── */
+    #tooltip { position: fixed; background: #1a1d27; border: 1px solid #3a3d4a; border-radius: 6px; padding: 8px 12px; font-size: 0.74rem; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 9999; max-width: 260px; line-height: 1.7; }
+    #tooltip .t-type { font-weight: 700; font-size: 0.82rem; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>RaftScope</h1>
+    <div class="subtitle">Causal Space-Time Diagram for Raft Consensus</div>
+  </div>
+</header>
+
+<div id="controls">
+  <!-- File loading -->
+  <div id="load-zone" title="Click or drag JSONL files here">
+    📂 Load JSONL logs (one or more node files)
+  </div>
+  <input type="file" id="file-input" accept=".jsonl,.json" multiple />
+
+  <div class="sep"></div>
+
+  <!-- Event type filters -->
+  <strong style="font-size:0.78rem;color:#888;">Show:</strong>
+  <label><input type="checkbox" class="filter" value="vote_request" checked>vote_request</label>
+  <label><input type="checkbox" class="filter" value="vote_recv" checked>vote_recv</label>
+  <label><input type="checkbox" class="filter" value="vote_granted" checked>vote_granted</label>
+  <label><input type="checkbox" class="filter" value="vote_denied" checked>vote_denied</label>
+  <label><input type="checkbox" class="filter" value="vote_granted_recv" checked>vote_granted_recv</label>
+  <label><input type="checkbox" class="filter" value="vote_denied_recv" checked>vote_denied_recv</label>
+  <label><input type="checkbox" class="filter" value="log_append" checked>log_append</label>
+  <label><input type="checkbox" class="filter" value="log_append_recv" checked>log_append_recv</label>
+  <label><input type="checkbox" class="filter" value="commit" checked>commit</label>
+  <label><input type="checkbox" class="filter" value="leader_change" checked>leader_change</label>
+  <label><input type="checkbox" class="filter" value="become_follower" checked>become_follower</label>
+  <label><input type="checkbox" class="filter" value="become_candidate" checked>become_candidate</label>
+  <label><input type="checkbox" class="filter" value="node_crash" checked>node_crash</label>
+  <label><input type="checkbox" class="filter" value="partition_start" checked>partition_start</label>
+  <label><input type="checkbox" class="filter" value="partition_end" checked>partition_end</label>
+
+  <div class="sep"></div>
+  <button onclick="selectAll(true)">All</button>
+  <button class="secondary" onclick="selectAll(false)">None</button>
+  <button onclick="loadDemo()">Load Demo</button>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <div id="empty-state">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="8" y="8" width="10" height="48" rx="2" fill="#a78bfa"/>
+        <rect x="27" y="8" width="10" height="48" rx="2" fill="#60a5fa"/>
+        <rect x="46" y="8" width="10" height="48" rx="2" fill="#34d399"/>
+        <line x1="18" y1="20" x2="27" y2="28" stroke="#f59e0b" stroke-width="2" marker-end="url(#demo-arrow)"/>
+        <line x1="27" y1="36" x2="18" y2="44" stroke="#f59e0b" stroke-width="2"/>
+      </svg>
+      <p>Load JSONL log files to visualize the causal diagram</p>
+      <p style="font-size:0.78rem;color:#555;">Or click <strong style="color:#a78bfa">Load Demo</strong> to see an example</p>
+    </div>
+  </div>
+  <div id="sidebar">
+    <h2>Event Detail</h2>
+    <div id="event-detail"><span class="no-sel">Click an event to inspect it.</span></div>
+    <div id="legend"></div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// Color palette – one color per event type
+// ═══════════════════════════════════════════════════════════════════
+const EVENT_COLORS = {
+  vote_request:      "#f59e0b",  // amber
+  vote_recv:         "#fbbf24",  // amber-light
+  vote_granted:      "#34d399",  // emerald
+  vote_denied:       "#f87171",  // red
+  vote_granted_recv: "#6ee7b7",  // emerald-light
+  vote_denied_recv:  "#fca5a5",  // red-light
+  log_append:        "#60a5fa",  // blue
+  log_append_recv:   "#93c5fd",  // blue-light
+  commit:            "#a78bfa",  // violet
+  leader_change:     "#c084fc",  // purple
+  become_follower:   "#94a3b8",  // slate
+  become_candidate:  "#fb923c",  // orange
+  node_crash:        "#ff4444",  // bright-red
+  partition_start:   "#f97316",  // orange
+  partition_end:     "#22d3ee",  // cyan
+};
+
+// Event types where we want to draw causal arrows
+// send_type → recv_type
+const ARROW_PAIRS = [
+  ["vote_request",   "vote_recv"],
+  ["vote_granted",   "vote_granted_recv"],
+  ["vote_denied",    "vote_denied_recv"],
+  ["log_append",     "log_append_recv"],
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════
+let allEvents = [];    // parsed from JSONL
+let filtered  = [];    // after applying type filters
+let selected  = null;  // currently selected event
+
+// ═══════════════════════════════════════════════════════════════════
+// File loading
+// ═══════════════════════════════════════════════════════════════════
+const loadZone  = document.getElementById("load-zone");
+const fileInput = document.getElementById("file-input");
+
+loadZone.addEventListener("click", () => fileInput.click());
+loadZone.addEventListener("dragover", e => { e.preventDefault(); loadZone.classList.add("drag-over"); });
+loadZone.addEventListener("dragleave", () => loadZone.classList.remove("drag-over"));
+loadZone.addEventListener("drop", e => {
+  e.preventDefault();
+  loadZone.classList.remove("drag-over");
+  loadFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener("change", () => loadFiles([...fileInput.files]));
+
+async function loadFiles(files) {
+  const texts = await Promise.all(files.map(f => f.text()));
+  const events = [];
+  for (const text of texts) {
+    for (const line of text.split("\n")) {
+      const l = line.trim();
+      if (!l) continue;
+      try { events.push(JSON.parse(l)); } catch { /* skip malformed */ }
+    }
+  }
+  if (events.length === 0) { alert("No valid events found in the selected files."); return; }
+  allEvents = events;
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Demo data – synthetic 3-node election + log append scenario
+// ═══════════════════════════════════════════════════════════════════
+function loadDemo() {
+  allEvents = generateDemoEvents();
+  applyFilters();
+}
+
+function generateDemoEvents() {
+  // Simulates: 3-node cluster, node 0 starts election, becomes leader,
+  // then node 0 is partitioned, node 1 becomes leader.
+  const E = (lts, wt, nid, type, from, to, term, li, ci, role, extra={}) => ({
+    lamport_ts: lts, wall_time_us: wt, node_id: nid, event_type: type,
+    from_node: from, to_node: to, term, log_index: li, commit_index: ci, role,
+    ...extra
+  });
+  const BASE = 1000000000000;
+  const MS   = 1000;
+  let t = BASE;
+  const ev = [];
+
+  // ── Phase 1: Initial election (node 0 wins) ──────────────────────
+  ev.push(E(1,  t+=200*MS, 0, "become_candidate", 0, -1,  1, 0, 0, "candidate"));
+  ev.push(E(2,  t+=10*MS,  0, "vote_request",     0,  1,  1, 0, 0, "candidate"));
+  ev.push(E(3,  t+=10*MS,  0, "vote_request",     0,  2,  1, 0, 0, "candidate"));
+  ev.push(E(4,  t+=20*MS,  1, "vote_recv",        0,  1,  1, 0, 0, "follower"));
+  ev.push(E(5,  t+=5*MS,   1, "vote_granted",     1,  0,  1, 0, 0, "follower"));
+  ev.push(E(6,  t+=15*MS,  2, "vote_recv",        0,  2,  1, 0, 0, "follower"));
+  ev.push(E(7,  t+=5*MS,   2, "vote_granted",     2,  0,  1, 0, 0, "follower"));
+  ev.push(E(8,  t+=10*MS,  0, "vote_granted_recv",1,  0,  1, 0, 0, "candidate"));
+  ev.push(E(9,  t+=2*MS,   0, "leader_change",    0, -1,  1, 0, 0, "leader"));
+  ev.push(E(10, t+=2*MS,   0, "vote_granted_recv",2,  0,  1, 0, 0, "leader"));
+
+  // ── Phase 2: Log replication (node 0 leader, client cmd) ─────────
+  t += 50*MS;
+  ev.push(E(11, t+=5*MS,   0, "log_append",       0,  1,  1, 1, 0, "leader", {data:"cmd1"}));
+  ev.push(E(12, t+=5*MS,   0, "log_append",       0,  2,  1, 1, 0, "leader", {data:"cmd1"}));
+  ev.push(E(13, t+=25*MS,  1, "log_append_recv",  0,  1,  1, 1, 0, "follower"));
+  ev.push(E(14, t+=25*MS,  2, "log_append_recv",  0,  2,  1, 1, 0, "follower"));
+  ev.push(E(15, t+=10*MS,  0, "commit",           0, -1,  1, 1, 1, "leader"));
+  ev.push(E(16, t+=5*MS,   1, "commit",           1, -1,  1, 1, 1, "follower"));
+  ev.push(E(17, t+=5*MS,   2, "commit",           2, -1,  1, 1, 1, "follower"));
+
+  // ── Phase 3: Node 0 partitioned / new election (node 1 wins) ─────
+  t += 100*MS;
+  ev.push(E(18, t+=5*MS,   0, "partition_start",  0, -1,  1, 1, 1, "leader"));
+  t += 300*MS; // wait for timeout
+  ev.push(E(19, t+=5*MS,   1, "become_candidate", 1, -1,  2, 1, 1, "candidate"));
+  ev.push(E(20, t+=10*MS,  1, "vote_request",     1,  0,  2, 1, 1, "candidate"));
+  ev.push(E(21, t+=10*MS,  1, "vote_request",     1,  2,  2, 1, 1, "candidate"));
+  // node 0 is partitioned — vote request never arrives
+  ev.push(E(22, t+=20*MS,  2, "vote_recv",        1,  2,  2, 1, 1, "follower"));
+  ev.push(E(23, t+=5*MS,   2, "vote_granted",     2,  1,  2, 1, 1, "follower"));
+  ev.push(E(24, t+=10*MS,  1, "vote_granted_recv",2,  1,  2, 1, 1, "candidate"));
+  ev.push(E(25, t+=2*MS,   1, "leader_change",    1, -1,  2, 1, 1, "leader"));
+
+  // ── Phase 4: node 0 reconnects → steps down ──────────────────────
+  t += 200*MS;
+  ev.push(E(26, t+=5*MS,   0, "partition_end",    0, -1,  1, 1, 1, "leader"));
+  ev.push(E(27, t+=5*MS,   0, "become_follower",  0, -1,  2, 1, 1, "follower"));
+
+  return ev;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Filtering
+// ═══════════════════════════════════════════════════════════════════
+function getActiveTypes() {
+  return new Set([...document.querySelectorAll(".filter:checked")].map(cb => cb.value));
+}
+
+function applyFilters() {
+  const types = getActiveTypes();
+  filtered = allEvents.filter(e => types.has(e.event_type));
+  render();
+}
+
+document.querySelectorAll(".filter").forEach(cb => cb.addEventListener("change", applyFilters));
+
+function selectAll(v) {
+  document.querySelectorAll(".filter").forEach(cb => cb.checked = v);
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Rendering
+// ═══════════════════════════════════════════════════════════════════
+function render() {
+  const wrap = document.getElementById("canvas-wrap");
+  const emptyState = document.getElementById("empty-state");
+  wrap.querySelectorAll("svg.diagram").forEach(s => s.remove());
+  selected = null;
+  showDetail(null);
+
+  if (filtered.length === 0) {
+    if (emptyState) emptyState.style.display = "flex";
+    buildLegend();
+    return;
+  }
+  if (emptyState) emptyState.style.display = "none";
+
+  // ── Layout constants ──────────────────────────────────────────────
+  const PAD_TOP    = 50;
+  const PAD_LEFT   = 60;
+  const PAD_RIGHT  = 40;
+  const NODE_SPACE = 180;  // horizontal gap between timelines
+  const PX_PER_TS  = 28;   // pixels per Lamport tick
+  const MARGIN_BOT = 40;
+
+  // Gather node IDs from events (sorted)
+  const nodeIds = [...new Set(allEvents.map(e => e.node_id))].sort((a,b) => a-b);
+  const N = nodeIds.length;
+  const nodeX = {};
+  nodeIds.forEach((nid, i) => { nodeX[nid] = PAD_LEFT + i * NODE_SPACE; });
+
+  // Lamport range
+  const allLTS = filtered.map(e => e.lamport_ts);
+  const ltsMin = Math.min(...allLTS);
+  const ltsMax = Math.max(...allLTS);
+  const Y = lts => PAD_TOP + (lts - ltsMin) * PX_PER_TS;
+
+  const W = PAD_LEFT + (N - 1) * NODE_SPACE + PAD_RIGHT;
+  const H = PAD_TOP + (ltsMax - ltsMin + 2) * PX_PER_TS + MARGIN_BOT;
+
+  const svg = d3.select(wrap).append("svg")
+    .attr("class", "diagram")
+    .attr("width",  W)
+    .attr("height", H);
+
+  // Arrow marker
+  svg.append("defs").append("marker")
+    .attr("id", "arrowhead")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8).attr("refY", 0)
+    .attr("markerWidth", 6).attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#888");
+
+  // ── Timelines ─────────────────────────────────────────────────────
+  const tg = svg.append("g").attr("class", "timelines");
+  nodeIds.forEach(nid => {
+    const x = nodeX[nid];
+    tg.append("line").attr("class","timeline")
+      .attr("x1",x).attr("x2",x)
+      .attr("y1",PAD_TOP - 20).attr("y2",H - MARGIN_BOT);
+    tg.append("text").attr("class","node-label")
+      .attr("x",x).attr("y",PAD_TOP - 28)
+      .attr("text-anchor","middle")
+      .text(`Node ${nid}`);
+  });
+
+  // ── Causal arrows (send → recv pairs) ────────────────────────────
+  const arrowG = svg.append("g").attr("class", "arrows");
+
+  // Build index: for each (from, to, type) → sorted list of events
+  const idx = {};
+  const key = (from, to, type) => `${from}|${to}|${type}`;
+  for (const e of filtered) {
+    // A send event: node_id == from_node && to_node >= 0 && to_node != node_id
+    if (e.from_node === e.node_id && e.to_node >= 0 && e.to_node !== e.node_id) {
+      const k = key(e.from_node, e.to_node, e.event_type);
+      if (!idx[k]) idx[k] = [];
+      idx[k].push(e);
+    }
+  }
+  // Sort each bucket by lamport_ts
+  for (const k of Object.keys(idx)) idx[k].sort((a,b) => a.lamport_ts - b.lamport_ts);
+
+  const drawnArrows = new Set();
+
+  for (const [sendType, recvType] of ARROW_PAIRS) {
+    for (const recvEv of filtered) {
+      // A recv event: to_node == node_id && from_node != node_id
+      if (recvEv.event_type !== recvType) continue;
+      if (recvEv.to_node !== recvEv.node_id) continue;
+      if (recvEv.from_node < 0 || recvEv.from_node === recvEv.node_id) continue;
+
+      // Find matching send event
+      const k = key(recvEv.from_node, recvEv.to_node, sendType);
+      const bucket = idx[k];
+      if (!bucket) continue;
+
+      // Pick the latest send with lamport_ts <= recv lamport_ts
+      let send = null;
+      for (const s of bucket) {
+        if (s.lamport_ts <= recvEv.lamport_ts) send = s;
+        else break;
+      }
+      if (!send) continue;
+
+      const arrowKey = `${send.lamport_ts}|${recvEv.lamport_ts}|${send.node_id}|${recvEv.node_id}`;
+      if (drawnArrows.has(arrowKey)) continue;
+      drawnArrows.add(arrowKey);
+
+      const x1 = nodeX[send.node_id],   y1 = Y(send.lamport_ts);
+      const x2 = nodeX[recvEv.node_id], y2 = Y(recvEv.lamport_ts);
+      const color = EVENT_COLORS[sendType] || "#888";
+
+      // Curve arrows
+      const dx = x2 - x1, dy = y2 - y1;
+      const mx = (x1 + x2) / 2 + (dy === 0 ? 0 : 0);
+      const my = (y1 + y2) / 2;
+
+      arrowG.append("line")
+        .attr("class", "arrow")
+        .attr("x1", x1).attr("y1", y1 + 7)
+        .attr("x2", x2).attr("y2", y2 - 7)
+        .attr("stroke", color)
+        .on("mouseover", function(event) {
+          showTooltip(event, `${sendType} → ${recvType}\nNode ${send.node_id} → Node ${recvEv.node_id}\nLamport: ${send.lamport_ts} → ${recvEv.lamport_ts}\nTerm: ${send.term}`);
+        })
+        .on("mousemove", moveTooltip)
+        .on("mouseout", hideTooltip);
+
+      // Label midpoint
+      const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+      arrowG.append("text").attr("class","arrow-label")
+        .attr("x", midX + 5).attr("y", midY)
+        .text(sendType.replace("vote_","v:").replace("log_append","append"));
+    }
+  }
+
+  // ── Events ───────────────────────────────────────────────────────
+  const evG = svg.append("g").attr("class", "events");
+  evG.selectAll("circle")
+    .data(filtered)
+    .join("circle")
+      .attr("class", "event-circle")
+      .attr("cx", d => nodeX[d.node_id] ?? 0)
+      .attr("cy", d => Y(d.lamport_ts))
+      .attr("r", 7)
+      .attr("fill", d => EVENT_COLORS[d.event_type] || "#888")
+      .attr("stroke", d => d3.color(EVENT_COLORS[d.event_type] || "#888").darker(1))
+      .on("mouseover", function(event, d) {
+        showTooltip(event,
+          `[${d.event_type}]\nNode ${d.node_id} | term ${d.term}\nLamport: ${d.lamport_ts}\nrole: ${d.role}\nlog_index: ${d.log_index} | commit: ${d.commit_index}`
+        );
+      })
+      .on("mousemove", moveTooltip)
+      .on("mouseout", hideTooltip)
+      .on("click", function(event, d) {
+        selected = d;
+        evG.selectAll("circle").classed("selected", false);
+        d3.select(this).classed("selected", true);
+        showDetail(d);
+        event.stopPropagation();
+      });
+
+  // Lamport tick labels on left margin
+  const tickG = svg.append("g").attr("class","time-axis");
+  const tickStep = Math.max(1, Math.round((ltsMax - ltsMin) / 20));
+  for (let lts = ltsMin; lts <= ltsMax; lts += tickStep) {
+    const y = Y(lts);
+    tickG.append("line").attr("x1", PAD_LEFT - 8).attr("x2", W - PAD_RIGHT).attr("y1",y).attr("y2",y);
+    tickG.append("text").attr("x", PAD_LEFT - 12).attr("y", y + 4).attr("text-anchor","end").text(lts);
+  }
+
+  buildLegend();
+
+  // Click on background deselects
+  svg.on("click", () => {
+    selected = null;
+    evG.selectAll("circle").classed("selected", false);
+    showDetail(null);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Legend
+// ═══════════════════════════════════════════════════════════════════
+function buildLegend() {
+  const div = document.getElementById("legend");
+  div.innerHTML = "<h2>Legend</h2>";
+  for (const [type, color] of Object.entries(EVENT_COLORS)) {
+    const row = document.createElement("div");
+    row.className = "legend-row";
+    row.innerHTML = `<span class="legend-dot" style="background:${color}"></span>${type}`;
+    div.appendChild(row);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Event detail panel
+// ═══════════════════════════════════════════════════════════════════
+function showDetail(ev) {
+  const div = document.getElementById("event-detail");
+  if (!ev) {
+    div.innerHTML = '<span class="no-sel">Click an event to inspect it.</span>';
+    return;
+  }
+  const fields = [
+    ["event_type",   ev.event_type],
+    ["node_id",      ev.node_id],
+    ["from_node",    ev.from_node < 0 ? "—" : ev.from_node],
+    ["to_node",      ev.to_node < 0   ? "—" : ev.to_node],
+    ["term",         ev.term],
+    ["role",         ev.role],
+    ["log_index",    ev.log_index],
+    ["commit_index", ev.commit_index],
+    ["lamport_ts",   ev.lamport_ts],
+    ["wall_time",    new Date(ev.wall_time_us / 1000).toISOString()],
+  ];
+  if (ev.data) fields.push(["data", ev.data]);
+  div.innerHTML = fields.map(([k,v]) =>
+    `<div class="field"><span class="k">${k}</span><span class="v">${v}</span></div>`
+  ).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Tooltip
+// ═══════════════════════════════════════════════════════════════════
+const tooltip = document.getElementById("tooltip");
+
+function showTooltip(event, text) {
+  tooltip.innerHTML = text.split("\n").map(l => `<div>${l}</div>`).join("");
+  tooltip.style.opacity = "1";
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  tooltip.style.left = (event.clientX + 14) + "px";
+  tooltip.style.top  = (event.clientY + 14) + "px";
+}
+function hideTooltip() {
+  tooltip.style.opacity = "0";
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Initial demo on load
+// ═══════════════════════════════════════════════════════════════════
+window.addEventListener("load", () => {
+  buildLegend();
+});
+</script>
+</body>
+</html>
