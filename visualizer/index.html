@@ -27,11 +27,6 @@
     #load-zone:hover, #load-zone.drag-over { border-color: #a78bfa; color: #a78bfa; }
     #file-input { display: none; }
 
-    #url-row { width: 100%; display: flex; align-items: center; gap: 8px; padding-top: 6px; border-top: 1px solid #2a2d3a; margin-top: 2px; }
-    #url-input { flex: 1; background: #1a1d27; border: 1px solid #3a3d4a; color: #ccc; border-radius: 4px; padding: 4px 8px; font-size: 0.76rem; font-family: monospace; min-width: 0; }
-    #url-input:focus { outline: none; border-color: #a78bfa; }
-    #url-input::placeholder { color: #444; }
-    #url-status { font-size: 0.74rem; white-space: nowrap; }
 
     #main { display: flex; flex: 1; overflow: hidden; }
     #canvas-wrap { flex: 1; overflow: auto; position: relative; }
@@ -88,6 +83,8 @@
   </div>
   <input type="file" id="file-input" accept=".jsonl,.json" multiple />
 
+  <button onclick="loadFromUrl()" title="Load JSONL files from a URL (use * as node-ID wildcard)">🌐 Load from URL…</button>
+
   <div class="sep"></div>
 
   <!-- Event type filters -->
@@ -113,14 +110,6 @@
   <button class="secondary" onclick="selectAll(false)">None</button>
   <button onclick="loadDemo()">Load Demo</button>
 
-  <!-- URL loader — for Multipass / headless VM access -->
-  <div id="url-row">
-    <span style="font-size:0.78rem;color:#888;white-space:nowrap;">🌐 Load from URL:</span>
-    <input type="text" id="url-input"
-      placeholder="http://<vm-ip>:8080/build/logs/raft_scope_node_*.jsonl" />
-    <button id="url-fetch-btn" onclick="loadFromUrl()">Fetch</button>
-    <span id="url-status"></span>
-  </div>
 </div>
 
 <div id="main">
@@ -217,19 +206,19 @@ async function loadFiles(files) {
 
 // ═══════════════════════════════════════════════════════════════════
 // URL loader — fetches JSONL logs from a remote HTTP server.
-// Pattern: use * as a wildcard for node ID (expanded to 0–9).
-// Example: http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl
+// Use * as a wildcard for node ID (expanded to 0–9).
 // ═══════════════════════════════════════════════════════════════════
 async function loadFromUrl() {
-  const pattern = document.getElementById("url-input").value.trim();
-  if (!pattern) { alert("Enter a URL (or URL pattern with * for node ID) first."); return; }
-
-  const btn    = document.getElementById("url-fetch-btn");
-  const status = document.getElementById("url-status");
-  btn.disabled = true;
-  btn.textContent = "Fetching…";
-  status.textContent = "";
-  status.style.color = "#888";
+  const pattern = prompt(
+    "Enter a URL pattern — use * as a node-ID wildcard:\n\n" +
+    "Demo logs:\n" +
+    "  http://192.168.2.3:8080/demo_logs/split_brain_node_*.jsonl\n" +
+    "  http://192.168.2.3:8080/demo_logs/stale_read_node_*.jsonl\n" +
+    "  http://192.168.2.3:8080/demo_logs/livelock_node_*.jsonl\n\n" +
+    "Live cluster logs:\n" +
+    "  http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl"
+  );
+  if (!pattern) return;
 
   // Expand * → 0..9; no * → treat as a single URL
   const urls = pattern.includes("*")
@@ -242,33 +231,28 @@ async function loadFromUrl() {
   for (const url of urls) {
     try {
       const resp = await fetch(url);
-      if (!resp.ok) continue;          // 404 = that node doesn't exist, skip
+      if (!resp.ok) continue;   // 404 = node doesn't exist, skip silently
       const text = await resp.text();
       let count = 0;
       for (const line of text.split("\n")) {
         const l = line.trim();
         if (!l) continue;
-        try { events.push(JSON.parse(l)); count++; } catch { /* skip */ }
+        try { events.push(JSON.parse(l)); count++; } catch { /* skip malformed */ }
       }
-      if (count > 0) loaded.push(url.split("/").pop() + ` (${count})`);
+      if (count > 0) loaded.push(url.split("/").pop() + ` (${count} events)`);
     } catch {
       // network error or CORS — skip silently
     }
   }
 
-  btn.disabled = false;
-  btn.textContent = "Fetch";
-
   if (events.length === 0) {
-    status.textContent = "✗ Nothing loaded — check the URL and that the server is running.";
-    status.style.color = "#f87171";
+    alert("Nothing loaded. Check:\n• The HTTP server is running on the VM (python3 -m http.server 8080)\n• The URL path is correct\n• The VM IP is right");
     return;
   }
 
   allEvents = events;
   applyFilters();
-  status.textContent = "✓ " + loaded.join(", ");
-  status.style.color = "#34d399";
+  alert("Loaded: " + loaded.join(", "));
 }
 
 // ═══════════════════════════════════════════════════════════════════
