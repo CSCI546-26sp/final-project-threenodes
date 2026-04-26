@@ -1,22 +1,50 @@
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/yGZxMl3D)
-# Raft Lab Skeleton + RaftScope
 
-RaftScope is a causal log visualization and debugging tool for Raft consensus. It instruments a running Raft cluster, records causal event ordering across nodes, and renders an interactive space-time diagram so you can diagnose split-brain, stale reads, and election livelock in seconds.
+# RaftScope
+
+**Causal Log Visualization and Debugging for Raft Consensus**  
+CSCI 546 – Distributed Systems | USC | Spring 2026
+
+RaftScope instruments a running Raft cluster, records causal event ordering across nodes using Lamport clocks, and renders an interactive space-time diagram so you can diagnose split-brain, stale reads, and election livelock in seconds — without manually correlating per-node logs.
 
 ---
 
 ## Prerequisites
 
-- `cmake` >= 3.22.1
-- `g++` >= 13.1.0
-- Python 3.8+ (for demo log generation and fault injection)
-- Docker + Docker Compose (optional — required only for the OTel/Jaeger live mode)
+| Tool | Version | Purpose |
+|---|---|---|
+| `cmake` | ≥ 3.22.1 | Build system |
+| `g++` | ≥ 13.1.0 | C++20 compiler |
+| Python | ≥ 3.8 | Demo log generation, fault injection harness |
+| Docker + Compose | any recent | OTel/Jaeger live mode (optional) |
 
 > [!IMPORTANT]
-> The lab will be built with **C++20** standard and extension disabled. (`-std=c++20` is used). Please avoid incompatible APIs. For more details, you can refer to the cmake files in the project.
+> The project is built with **C++20** (`-std=c++20`, extensions disabled). Avoid incompatible APIs.
 
 > [!WARNING]
-> You are not supposed to modify any build files. You can do that for your own testing purposes, but the grader will use the unmodified build files. Make sure your code compiles correctly with the provided build files.
+> Do not modify any build files. The grader uses the unmodified build files.
+
+---
+
+## Accessing the Visualizer from a Multipass / Headless VM
+
+The visualizer is a plain HTML file — browsers can't open `file://` paths on a remote VM. Serve it over HTTP instead:
+
+```bash
+# On the VM, from the repo root:
+python3 -m http.server 8080
+
+# Find the VM's IP:
+hostname -I | awk '{print $1}'
+```
+
+Then open this URL **on your Mac** (or any machine that can reach the VM):
+
+```
+http://<vm-ip>:8080/visualizer/index.html
+```
+
+The `demo_logs/` directory is served alongside the visualizer, so you can load scenario files directly from the file picker.
 
 ---
 
@@ -29,9 +57,9 @@ RaftScope is a causal log visualization and debugging tool for Raft consensus. I
 ./setup.sh
 ```
 
-This clones gRPC, googletest, and spdlog as submodules and installs gRPC binaries/headers to `$HOME/.local`.
+Clones gRPC, googletest, and spdlog as submodules and installs gRPC binaries/headers to `$HOME/.local`.
 
-### 2. Configure and build
+### 2. Standard build
 
 ```bash
 mkdir -p build && cd build
@@ -39,109 +67,128 @@ cmake ..
 make -j$(nproc)
 ```
 
-To build with OpenTelemetry tracing enabled (required for the Jaeger live mode):
+### 3. Build with OpenTelemetry tracing (required for Jaeger export)
 
 ```bash
+mkdir -p build && cd build
 cmake -DTRACING=ON ..
 make -j$(nproc)
 ```
 
+With tracing enabled, every gRPC span (AppendEntries, RequestVote) is enriched with Raft attributes (`raft.term`, `raft.log_index`, `raft.commit_index`, `raft.role`, `raft.node_id`) and named span events (`vote_granted`, `vote_denied`, `log_append_recv`, `commit`) before being exported to Jaeger via OTLP gRPC.
+
 ---
 
-## RaftScope: Quick Start (Demo Mode)
+## Quick Start — Demo Mode (No Cluster Needed)
 
-The fastest way to see RaftScope in action — no cluster required.
+### Option A: Pre-generated demo logs
 
-### Option A: Load pre-generated demo logs
+Start the HTTP server (see [Accessing the Visualizer](#accessing-the-visualizer-from-a-multipass--headless-vm) above), then load a scenario using one of these methods:
 
-```bash
-# Open the visualizer in your browser
-open visualizer/index.html       # macOS
-xdg-open visualizer/index.html  # Linux
-```
+**Multipass VM — use the URL loader.** Paste one of the patterns below into the **Load from URL** field in the visualizer and click **Fetch** (replace `<vm-ip>` with your VM's IP):
 
-Click **Load JSONL logs**, then select one or more files from `demo_logs/`:
-
-| File set | Scenario |
+| Scenario | URL pattern |
 |---|---|
-| `demo_logs/split_brain_node_*.jsonl` | Split-brain from a delayed leader heartbeat |
-| `demo_logs/stale_read_node_*.jsonl` | Stale read from a lagging follower |
-| `demo_logs/livelock_node_*.jsonl` | Election livelock from simultaneous timeouts |
+| Split-brain | `http://<vm-ip>:8080/demo_logs/split_brain_node_*.jsonl` |
+| Stale read | `http://<vm-ip>:8080/demo_logs/stale_read_node_*.jsonl` |
+| Livelock | `http://<vm-ip>:8080/demo_logs/livelock_node_*.jsonl` |
 
-Load all files for a scenario at once (multi-select) to see all node timelines together.
+**Local machine — use the file picker.** Click **Load JSONL logs** and multi-select all files for a scenario from `demo_logs/`.
 
-### Option B: Generate fresh demo logs
+### Option B: Regenerate demo logs
 
 ```bash
 python3 scripts/generate_demo_logs.py --output-dir demo_logs
 ```
 
-Then load the new files in the visualizer as above.
+Then load the files as in Option A.
 
-### Option C: Click "Load Demo" in the visualizer
+### Option C: Built-in demo (no files)
 
-The **Load Demo** button in the visualizer toolbar loads a built-in synthetic three-node scenario (initial election → log replication → partition → new election) without any files.
+Click **Load Demo** in the visualizer toolbar. It loads a built-in synthetic 3-node scenario — initial election, log replication, partition, and re-election — with no files required.
 
 ---
 
-## RaftScope: Live Cluster Mode (JSONL)
+## Live Cluster Mode — JSONL
 
-Run a real Raft cluster, inject faults, and visualize the causal log.
+Run a real cluster, inject faults interactively, then load the logs into the visualizer.
 
-### 1. Start a cluster
+### 1. Start a 3-node cluster
 
 ```bash
 cd build
 ./app/multinode --num 3
 ```
 
-At the `>` prompt, start the cluster:
+At the `>` prompt, type `r` to start all nodes:
 
 ```
 > r
 ```
 
-The cluster writes per-node event logs to `logs/raft_scope_node_<id>.jsonl` in the **build directory**.
+The cluster writes one log file per node to **`build/logs/raft_scope_node_<id>.jsonl`** as events occur.
 
-### 2. Inject faults interactively
+### 2. Available commands
+
+| Command | Effect |
+|---|---|
+| `r` | Start the cluster |
+| `dis <id>` | Disconnect a node (simulates partition / dropped heartbeat) |
+| `conn <id>` | Reconnect a node |
+| `prop <data>` | Propose a log entry to the leader |
+| `k` | Kill all nodes and exit |
+
+Example session:
 
 ```
-> dis 0          # disconnect node 0 (simulates delayed heartbeat / partition)
-> conn 0         # reconnect node 0
-> prop hello     # propose a log entry
+> r
+> prop hello
+> dis 0          # partition the leader
+> conn 0         # reconnect — it will step down
+> k
 ```
 
-### 3. Load the logs in the visualizer
+### 3. Load the logs
 
-Open `visualizer/index.html` in your browser and drag the `logs/raft_scope_node_*.jsonl` files from the build directory onto the **Load JSONL logs** drop zone, or click it to open a file picker.
+**From a Multipass / headless VM** — the browser can't open a file picker on the VM, so use the URL loader instead. Make sure the HTTP server is running from the repo root (`python3 -m http.server 8080`), then paste this into the **Load from URL** field in the visualizer and click **Fetch**:
 
-### 4. Run the automated fault injection harness
+```
+http://<vm-ip>:8080/build/logs/raft_scope_node_*.jsonl
+```
 
-The script drives all three canonical bug scenarios and saves the JSONL logs:
+The `*` expands to node IDs 0–9 automatically; nodes that don't exist are skipped.
+
+**From a local machine** — drag the `build/logs/raft_scope_node_*.jsonl` files onto the **Load JSONL logs** drop zone, or click it to open a file picker. Load all node files for a run together.
+
+---
+
+## Automated Fault Injection Harness
+
+The script starts a 3-node cluster, injects faults at deterministic points, captures JSONL logs, and prints time-to-diagnosis metrics for each scenario.
 
 ```bash
 # From the repo root
-bash scripts/run_fault_injection.sh          # runs all three scenarios
+bash scripts/run_fault_injection.sh           # all three scenarios
 bash scripts/run_fault_injection.sh split_brain
 bash scripts/run_fault_injection.sh stale_read
 bash scripts/run_fault_injection.sh livelock
 ```
 
-After each scenario, load the `logs/raft_scope_node_*_<scenario>.jsonl` files into the visualizer.
+Logs are saved to `logs/raft_scope_node_*_<scenario>.jsonl`. Load them in the visualizer after the script finishes.
 
-To force a deterministic election livelock (all nodes use the same election timeout):
+**Scenarios:**
 
-```bash
-export RAFT_FIXED_ELECTION_TIMEOUT_MS=300
-bash scripts/run_fault_injection.sh livelock
-unset RAFT_FIXED_ELECTION_TIMEOUT_MS
-```
+| Scenario | What is injected | What to look for in the diagram |
+|---|---|---|
+| `split_brain` | Leader is disconnected; followers time out and elect a new leader | Two `leader_change` events at different terms; the old leader's heartbeat arrow is absent |
+| `stale_read` | A follower is isolated while the leader commits new entries | `commit` on Node 0 has a lower Lamport ts than `log_append_recv` on the isolated node |
+| `livelock` | All nodes start with a short timeout; simultaneous elections | Repeated `become_candidate` events at the same tick, crossed `vote_denied` arrows each round |
 
 ---
 
-## RaftScope: Live Mode with OTel + Jaeger
+## OTel + Jaeger Export
 
-For near-real-time rendering and W3C TraceContext causal ordering, run the cluster with tracing enabled and query the Jaeger HTTP API directly from the visualizer.
+For full distributed tracing with W3C TraceContext causal ordering, export spans to Jaeger.
 
 ### 1. Start Jaeger and the OTel collector
 
@@ -150,74 +197,58 @@ cd tools/jaeger-suite
 docker compose up -d
 ```
 
-- Jaeger UI: http://localhost:16686
-- OTel collector OTLP gRPC endpoint: `localhost:4317`
+- **Jaeger UI:** http://localhost:16686  
+- **OTel OTLP gRPC endpoint:** `localhost:4317`
 
-### 2. Build and run nodes with tracing
+For Multipass VMs, replace `localhost` with the VM's IP when opening the Jaeger UI on your Mac.
+
+### 2. Run the cluster with tracing
 
 ```bash
-mkdir -p build && cd build
-cmake -DTRACING=ON ..
-make -j$(nproc)
+cd build          # must be the TRACING=ON build
 ./app/multinode --num 3
 > r
 ```
 
-Each node registers itself as a service named `raft-node-<id>` in Jaeger. All gRPC spans (AppendEntries, RequestVote) are enriched with Raft attributes:
+Each node registers as `raft-node-<id>` in Jaeger. Search for any of those service names in the Jaeger UI to inspect individual RPC spans with their Raft attributes and span events.
 
-| Span attribute | Description |
-|---|---|
-| `raft.node_id` | Node that handled the RPC |
-| `raft.term` | Current term at decision time |
-| `raft.log_index` | Last log index |
-| `raft.commit_index` | Commit index |
-| `raft.role` | `follower` / `candidate` / `leader` |
+### 3. Stop Jaeger
 
-Named span events mark key decision points: `vote_granted`, `vote_denied`, `log_append_recv`, `commit`.
-
-### 3. Query Jaeger from the visualizer
-
-Open `visualizer/index.html`. In the **Jaeger** control row:
-
-1. Set the URL to `http://localhost:16686` (default).
-2. Choose a lookback window (15m, 1h, 3h, 24h).
-3. Click **Fetch** — the visualizer queries `GET /api/services` to find all `raft-node-*` services, fetches their traces, and renders the space-time diagram.
-
-For **near-real-time rendering**, click **▶ Live** and select a polling interval (3s, 5s, 10s, 30s). The diagram refreshes automatically as new events arrive.
-
-> **CORS note:** Jaeger's query service allows `*` by default. If you see CORS errors, serve the visualizer from a local HTTP server: `python3 -m http.server 8080` and open `http://localhost:8080/visualizer/index.html`.
+```bash
+cd tools/jaeger-suite
+docker compose down
+```
 
 ---
 
 ## Visualizer Reference
 
-Open `visualizer/index.html` in any modern browser.
+Open `visualizer/index.html` via the HTTP server described above.
 
 ### Controls
 
 | Control | Description |
 |---|---|
-| **Load JSONL logs** | Drag-and-drop or click to load one or more `*.jsonl` node files |
-| **Nodes: □ N0 □ N1 …** | Per-node visibility toggles (populated after loading data) |
-| **Show: □ vote_request …** | Filter events by type |
-| **Time range sliders** | Restrict the diagram to a Lamport timestamp range |
-| **All / None** | Toggle all event-type or node filters at once |
-| **Load Demo** | Load built-in synthetic scenario without any files |
-| **Jaeger URL** | OTel/Jaeger query endpoint (default `http://localhost:16686`) |
-| **Lookback** | How far back to fetch Jaeger traces |
-| **Fetch** | Pull latest traces from Jaeger and re-render |
-| **▶ Live** | Start/stop auto-refresh polling at the selected interval |
+| **Load JSONL logs** | Drag-and-drop or click to load `*.jsonl` files — local machine only |
+| **Load from URL** | Paste a URL (use `*` as a node-ID wildcard) and click **Fetch** to pull logs over HTTP — works from Multipass VMs |
+| **Show: □ vote_request …** | Toggle individual event types on/off |
+| **All / None** | Select or deselect all event-type filters at once |
+| **Load Demo** | Load the built-in synthetic scenario without any files |
 
 ### Reading the diagram
 
 - **Vertical lines** — one timeline per node; time flows downward.
-- **Colored circles** — individual events; see the legend in the sidebar.
-- **Arrows** — causal message flows: `vote_request → vote_recv`, `vote_granted → vote_granted_recv`, `vote_denied → vote_denied_recv`, `log_append → log_append_recv`.
-- **Left margin numbers** — Lamport timestamps (causal ordering).
-- **Click any circle** — shows full event metadata in the sidebar (term, log index, commit index, role, wall time).
-- **Hover** — tooltip with event type, nodes, Lamport timestamps, and term.
+- **Colored circles** — individual events. Click any circle to see its full metadata in the sidebar.
+- **Arrows** — causal message flows between nodes:
+  - `vote_request` → `vote_recv`
+  - `vote_granted` → `vote_granted_recv`
+  - `vote_denied` → `vote_denied_recv`
+  - `log_append` → `log_append_recv`
+- **Left-margin numbers** — Lamport timestamps used for causal ordering.
+- **Hover** — tooltip showing event type, nodes involved, Lamport timestamps, and term.
+- **Sidebar legend** — color key for all event types.
 
-### Event color legend
+### Event colors
 
 | Color | Event types |
 |---|---|
@@ -236,23 +267,29 @@ Open `visualizer/index.html` in any modern browser.
 
 ## Diagnosing the Three Canonical Bugs
 
-### (a) Split-brain from a delayed heartbeat
+### Split-brain from a delayed heartbeat
 
-Load `demo_logs/split_brain_node_*.jsonl`. Look for the window where **two nodes both show `leader_change`** at different terms. The arrow from `vote_request` to `vote_recv` on the old leader (which arrived but was denied) makes the causal gap visible — the heartbeat that should have prevented the re-election is simply absent.
+Load `demo_logs/split_brain_node_*.jsonl`.
 
-### (b) Stale read from a lagging follower
+Find the two `leader_change` events — one on Node 0 (term 1) and one on Node 1 (term 2). The causal arrow that *should* connect Node 0's heartbeat to Node 1's timeline is simply absent: Node 1 never received a heartbeat, timed out, and started a new election while Node 0 still believed it was leader. The overlapping leader window is the split-brain.
 
-Load `demo_logs/stale_read_node_*.jsonl`. Find the `commit` event on the leader (Node 0). Compare its Lamport timestamp to the `log_append_recv` on Node 1 — Node 1's event arrives *after* the commit, so any read from Node 1 before that point returns stale data. The gap is invisible in per-node logs but immediately obvious in the diagram.
+### Stale read from a lagging follower
 
-### (c) Election livelock from simultaneous timeouts
+Load `demo_logs/stale_read_node_*.jsonl`.
 
-Load `demo_logs/livelock_node_*.jsonl`. Multiple `become_candidate` events at the same Lamport tick, with `vote_denied` arrows crossing between all nodes, show the collision. Watch it repeat for two rounds before jitter breaks the tie in round 3.
+Find the `commit` event on Node 0 at index 2. Then trace the `log_append` arrow toward Node 1 — it arrives at a Lamport timestamp *after* the commit. Any client read served by Node 1 between those two timestamps sees stale data (`x=1` instead of `x=2`). Per-node logs show the same sequence of events on each node but hide this cross-node gap entirely.
+
+### Election livelock from simultaneous timeouts
+
+Load `demo_logs/livelock_node_*.jsonl`.
+
+The diagram shows Nodes 0 and 1 both entering `become_candidate` at the same Lamport tick in rounds 1 and 2. Each round ends with crossed `vote_denied` arrows — neither candidate reaches a majority. In round 3, random jitter means Node 0 sends its `vote_request` before Node 1 starts its election, and all followers grant it the vote.
 
 ---
 
 ## JSONL Event Format
 
-Each line in a `*.jsonl` file is a JSON object:
+Each line in a `*.jsonl` file is a self-contained JSON record:
 
 ```json
 {
@@ -269,13 +306,17 @@ Each line in a `*.jsonl` file is a JSON object:
 }
 ```
 
-`from_node == to_node == node_id` for local events (no message). `to_node == -1` for broadcast-style local events (e.g., `leader_change`, `node_crash`).
+| Field | Description |
+|---|---|
+| `lamport_ts` | Lamport logical clock value — use this for causal ordering across nodes |
+| `wall_time_us` | Wall-clock time in microseconds since epoch |
+| `node_id` | The node that recorded this event |
+| `event_type` | One of the 15 event types listed in the color table above |
+| `from_node` | Sender node for message events; same as `node_id` for local events |
+| `to_node` | Recipient node for message events; `-1` for local/broadcast events |
+| `term` | Raft term at the time of the event |
+| `log_index` | Last log index at the time of the event |
+| `commit_index` | Commit index at the time of the event |
+| `role` | `follower`, `candidate`, or `leader` |
 
----
-
-## Stopping Jaeger
-
-```bash
-cd tools/jaeger-suite
-docker compose down
-```
+Heartbeats and empty AppendEntries are intentionally excluded to keep the diagram focused on causally significant decisions.
