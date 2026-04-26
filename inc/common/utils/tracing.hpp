@@ -311,6 +311,32 @@ inline void AddEvent(grpc::ServerContextBase *ctx, const std::string &name) {
     std::cerr << "[tracing] AddEvent(server) -> no span: " << name << "\n";
 }
 
+// Attach Raft consensus metadata as span attributes on the active server span.
+// Call from inside an RPC handler after acquiring the Raft mutex.
+inline void SetRaftAttributes(grpc::ServerContextBase *ctx,
+                               int64_t node_id, int64_t term,
+                               int64_t log_index, int64_t commit_index,
+                               opentelemetry::nostd::string_view role) {
+  auto span = detail::ServerSpanRegistry::Instance().Get(ctx);
+  if (!span || !span->GetContext().IsValid())
+    return;
+  span->SetAttribute("raft.node_id",      node_id);
+  span->SetAttribute("raft.term",         term);
+  span->SetAttribute("raft.log_index",    log_index);
+  span->SetAttribute("raft.commit_index", commit_index);
+  span->SetAttribute("raft.role",         role);
+}
+
+// Attach a named Raft decision event to the active server span.
+// event_name should be one of: vote_granted, vote_denied, log_append_recv, commit.
+inline void AddRaftEvent(grpc::ServerContextBase *ctx,
+                          opentelemetry::nostd::string_view event_name) {
+  auto span = detail::ServerSpanRegistry::Instance().Get(ctx);
+  if (!span || !span->GetContext().IsValid())
+    return;
+  span->AddEvent(event_name);
+}
+
 struct TracingServerInterceptorFactory final
     : grpc::experimental::ServerInterceptorFactoryInterface {
   grpc::experimental::Interceptor *

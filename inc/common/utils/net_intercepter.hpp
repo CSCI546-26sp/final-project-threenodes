@@ -4,7 +4,9 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/impl/codegen/client_interceptor.h>
 
+#include <functional>
 #include <set>
+#include <vector>
 // #include "raft.grpc.pb.h"
 
 namespace rafty {
@@ -91,20 +93,34 @@ private:
       rank2; // "disconnected" servers - partition 2
 
 public:
+  // Partition event callbacks – fired after state changes, outside the static mutex.
+  // cb(node_id_str, is_partition_start)
+  using PartitionCb = std::function<void(const std::string &, bool)>;
+  inline static void add_partition_callback(PartitionCb cb) {
+    std::lock_guard<std::mutex> lk(mtx);
+    partition_cbs_.push_back(std::move(cb));
+  }
+
   inline static void disconnect(const std::string &id) {
-    std::lock_guard<std::mutex> lock(mtx);
-    if (rank1.find(id) != rank1.end()) {
-      rank1.erase(id);
-      rank2.insert(id);
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      if (rank1.find(id) != rank1.end()) {
+        rank1.erase(id);
+        rank2.insert(id);
+      }
     }
+    fire_partition(id, true);
   }
 
   inline static void reconnect(const std::string &id) {
-    std::lock_guard<std::mutex> lock(mtx);
-    if (rank2.find(id) != rank2.end()) {
-      rank2.erase(id);
-      rank1.insert(id);
+    {
+      std::lock_guard<std::mutex> lock(mtx);
+      if (rank2.find(id) != rank2.end()) {
+        rank2.erase(id);
+        rank1.insert(id);
+      }
     }
+    fire_partition(id, false);
   }
 
   inline static void setup_rank(const std::set<std::string> &ids) {
@@ -117,6 +133,15 @@ public:
   }
 
   inline static void set_type(NetInterceptionType type_) { type = type_; }
+
+private:
+  inline static std::vector<PartitionCb> partition_cbs_;
+
+  static void fire_partition(const std::string &id, bool start) {
+    std::vector<PartitionCb> cbs;
+    { std::lock_guard<std::mutex> lk(mtx); cbs = partition_cbs_; }
+    for (auto &cb : cbs) cb(id, start);
+  }
 };
 
 class NetInterceptorFactory
