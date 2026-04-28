@@ -26,6 +26,10 @@
     #load-zone { border: 2px dashed #2a2d3a; border-radius: 8px; padding: 8px 18px; font-size: 0.78rem; color: #666; cursor: pointer; transition: border-color 0.2s, color 0.2s; white-space: nowrap; }
     #load-zone:hover, #load-zone.drag-over { border-color: #a78bfa; color: #a78bfa; }
     #file-input { display: none; }
+    #last-updated { font-size: 0.72rem; color: #555; white-space: nowrap; }
+    #auto-refresh-label { font-size: 0.78rem; color: #aaa; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    #auto-refresh-label input { accent-color: #34d399; cursor: pointer; }
+    #auto-refresh-label.active { color: #34d399; }
 
 
     #main { display: flex; flex: 1; overflow: hidden; }
@@ -110,6 +114,14 @@
   <button class="secondary" onclick="selectAll(false)">None</button>
   <button onclick="loadDemo()">Load Demo</button>
 
+  <div class="sep"></div>
+  <button id="refresh-btn" class="secondary" onclick="refreshData()" disabled title="Re-fetch the last loaded source">↺ Refresh</button>
+  <label id="auto-refresh-label" title="Automatically re-fetch every 5 s (URL loads only)">
+    <input type="checkbox" id="auto-refresh-chk" onchange="toggleAutoRefresh(this.checked)" disabled />
+    Auto (5s)
+  </label>
+  <span id="last-updated"></span>
+
 </div>
 
 <div id="main">
@@ -173,6 +185,10 @@ let allEvents = [];    // parsed from JSONL
 let filtered  = [];    // after applying type filters
 let selected  = null;  // currently selected event
 
+// Refresh state
+let lastLoadSource = null;   // { type:'url', pattern } | { type:'files', files }
+let pollTimerId    = null;
+
 // ═══════════════════════════════════════════════════════════════════
 // File loading
 // ═══════════════════════════════════════════════════════════════════
@@ -202,6 +218,9 @@ async function loadFiles(files) {
   if (events.length === 0) { alert("No valid events found in the selected files."); return; }
   allEvents = events;
   applyFilters();
+  lastLoadSource = { type: 'files', files };
+  enableRefreshControls(false);
+  markUpdated();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -219,8 +238,17 @@ async function loadFromUrl() {
     "  http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl"
   );
   if (!pattern) return;
+  const ok = await loadFromPattern(pattern, true);
+  if (ok) {
+    lastLoadSource = { type: 'url', pattern };
+    enableRefreshControls(true);
+    markUpdated();
+  }
+}
 
-  // Expand * → 0..9; no * → treat as a single URL
+// Fetch JSONL logs from a URL pattern. Returns true on success.
+// showAlert: show an error alert when nothing loads (skip on silent refresh).
+async function loadFromPattern(pattern, showAlert = false) {
   const urls = pattern.includes("*")
     ? Array.from({ length: 10 }, (_, i) => pattern.replace("*", i))
     : [pattern];
@@ -246,13 +274,72 @@ async function loadFromUrl() {
   }
 
   if (events.length === 0) {
-    alert("Nothing loaded. Check:\n• The HTTP server is running on the VM (python3 -m http.server 8080)\n• The URL path is correct\n• The VM IP is right");
-    return;
+    if (showAlert) alert("Nothing loaded. Check:\n• The HTTP server is running on the VM (python3 -m http.server 8080)\n• The URL path is correct\n• The VM IP is right");
+    return false;
   }
 
   allEvents = events;
   applyFilters();
-  alert("Loaded: " + loaded.join(", "));
+  if (showAlert) alert("Loaded: " + loaded.join(", "));
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Refresh helpers
+// ═══════════════════════════════════════════════════════════════════
+async function refreshData() {
+  if (!lastLoadSource) return;
+  if (lastLoadSource.type === 'url') {
+    await loadFromPattern(lastLoadSource.pattern, false);
+    markUpdated();
+  } else if (lastLoadSource.type === 'files') {
+    // Re-read File objects (still in memory from the original pick)
+    const files = lastLoadSource.files;
+    const texts = await Promise.all(files.map(f => f.text()));
+    const events = [];
+    for (const text of texts) {
+      for (const line of text.split("\n")) {
+        const l = line.trim();
+        if (!l) continue;
+        try { events.push(JSON.parse(l)); } catch { /* skip */ }
+      }
+    }
+    if (events.length > 0) { allEvents = events; applyFilters(); }
+    markUpdated();
+  }
+}
+
+function toggleAutoRefresh(on) {
+  const label = document.getElementById("auto-refresh-label");
+  if (on) {
+    pollTimerId = setInterval(refreshData, 5000);
+    label.classList.add("active");
+  } else {
+    clearInterval(pollTimerId);
+    pollTimerId = null;
+    label.classList.remove("active");
+  }
+}
+
+// supportsAuto: URL sources can auto-refresh; file sources cannot (CORS-free but stale handle)
+function enableRefreshControls(supportsAuto) {
+  const btn = document.getElementById("refresh-btn");
+  const chk = document.getElementById("auto-refresh-chk");
+  btn.disabled = false;
+  chk.disabled = !supportsAuto;
+  if (!supportsAuto && chk.checked) {
+    chk.checked = false;
+    toggleAutoRefresh(false);
+  }
+}
+
+function markUpdated() {
+  const el = document.getElementById("last-updated");
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,"0");
+  const mm = String(now.getMinutes()).padStart(2,"0");
+  const ss = String(now.getSeconds()).padStart(2,"0");
+  el.textContent = `Updated ${hh}:${mm}:${ss}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -261,6 +348,9 @@ async function loadFromUrl() {
 function loadDemo() {
   allEvents = generateDemoEvents();
   applyFilters();
+  lastLoadSource = { type: 'demo' };
+  enableRefreshControls(false);
+  markUpdated();
 }
 
 function generateDemoEvents() {

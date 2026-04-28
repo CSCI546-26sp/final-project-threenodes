@@ -58,6 +58,15 @@ You will see a space-time diagram showing a split-brain scenario across 3 nodes.
 
 Use the checkboxes at the top to show/hide event types.
 
+### Refresh controls
+
+After loading logs from a URL, two additional controls become active:
+
+- **↺ Refresh** — re-fetches the same URL pattern immediately and redraws the diagram. Useful while a cluster is still running and writing new events.
+- **Auto (5s)** — polls the URL every 5 seconds automatically. The label turns green when active. Only available for URL loads (not local file picks).
+
+A small `Updated HH:MM:SS` timestamp appears next to these controls whenever the diagram is refreshed.
+
 ---
 
 ## Run a live cluster and visualize it
@@ -87,6 +96,8 @@ Type `r` at the prompt and press Enter to start the nodes.
 ```
 http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl
 ```
+
+Check **Auto (5s)** to have the diagram refresh automatically as new events are written — useful for watching a live cluster in real time. Or click **↺ Refresh** to pull the latest events on demand.
 
 ---
 
