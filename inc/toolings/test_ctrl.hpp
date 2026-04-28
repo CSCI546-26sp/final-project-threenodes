@@ -218,10 +218,15 @@ public:
 
   void serve_apply_result(uint64_t id) {
     google::protobuf::Empty request;
-    grpc::ClientContext context;
+    auto context = std::make_shared<grpc::ClientContext>();
+
+    {
+      std::lock_guard<std::mutex> lk(apply_ctx_mtx_);
+      apply_contexts_.push_back(context);
+    }
 
     std::unique_ptr<grpc::ClientReader<testerpb::ApplyResult>> reader(
-        this->nodes[id]->Apply(&context, request));
+        this->nodes[id]->Apply(context.get(), request));
 
     testerpb::ApplyResult result;
     while (reader->Read(&result)) {
@@ -229,7 +234,7 @@ public:
       this->applier_func(result);
     }
 
-    grpc::Status status = reader->Finish();
+    reader->Finish();
   }
 
   grpc::Status ReportReady(ServerContext *context,
@@ -281,6 +286,14 @@ public:
   inline void kill(const std::unordered_map<uint64_t, bool> connected = {}) {
     this->killed.store(true, std::memory_order::release);
     this->cv_ready_.notify_all();
+
+    // Cancel all streaming Apply RPCs so node_apply_threads unblock immediately.
+    {
+      std::lock_guard<std::mutex> lk(apply_ctx_mtx_);
+      for (auto &ctx : apply_contexts_) {
+        ctx->TryCancel();
+      }
+    }
     // Try gRPC kill with retries
     for (int retry = 0; retry < 3; retry++) {
       std::vector<std::future<bool>> futs;
@@ -596,5 +609,9 @@ private:
       nodes;
 
   std::function<void(testerpb::ApplyResult)> applier_func;
+
+  // Streaming Apply contexts — cancelled by kill() to unblock apply threads.
+  std::mutex apply_ctx_mtx_;
+  std::vector<std::shared_ptr<grpc::ClientContext>> apply_contexts_;
 };
 } // namespace toolings
