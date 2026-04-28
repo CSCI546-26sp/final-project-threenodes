@@ -143,6 +143,7 @@
     <input type="checkbox" id="auto-refresh-chk" onchange="toggleAutoRefresh(this.checked)" disabled />
     Auto (2s)
   </label>
+  <button id="latest-btn" class="secondary" onclick="scrollToLatest()" disabled title="Jump to the most recent event">↓ Latest</button>
   <span id="event-count"></span>
   <span id="last-updated"></span>
 
@@ -245,6 +246,7 @@ async function loadFiles(files) {
   prevMaxLts = Infinity; // treat all as existing — no pop animation on first load
   allEvents = events;
   applyFilters();
+  scrollToLatest(false);
   lastLoadSource = { type: 'files', files };
   enableRefreshControls(false);
   markUpdated();
@@ -268,6 +270,7 @@ async function loadFromUrl() {
   prevMaxLts = Infinity; // no animation on initial URL load
   const ok = await loadFromPattern(pattern, true);
   if (ok) {
+    scrollToLatest(false);
     lastLoadSource = { type: 'url', pattern };
     enableRefreshControls(true);
     markUpdated();
@@ -346,7 +349,10 @@ async function refreshData() {
   }
 
   const added = allEvents.length - countBefore;
-  if (added > 0) showToast(`+${added} new event${added === 1 ? '' : 's'}`);
+  if (added > 0) {
+    showToast(`+${added} new event${added === 1 ? '' : 's'}`);
+    scrollToLatest(); // follow the action; user can scroll up to examine history
+  }
   markUpdated();
 }
 
@@ -367,10 +373,12 @@ function toggleAutoRefresh(on) {
 
 // supportsAuto: URL sources can auto-refresh; file sources cannot
 function enableRefreshControls(supportsAuto) {
-  const btn = document.getElementById("refresh-btn");
-  const chk = document.getElementById("auto-refresh-chk");
-  btn.disabled = false;
-  chk.disabled = !supportsAuto;
+  const btn    = document.getElementById("refresh-btn");
+  const chk    = document.getElementById("auto-refresh-chk");
+  const latBtn = document.getElementById("latest-btn");
+  btn.disabled    = false;
+  latBtn.disabled = false;
+  chk.disabled    = !supportsAuto;
   if (!supportsAuto && chk.checked) {
     chk.checked = false;
     toggleAutoRefresh(false);
@@ -394,16 +402,19 @@ function showToast(msg) {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
 }
 
-function updateEventCount() {
-  markUpdated(); // markUpdated now shows both time and event count
+function scrollToLatest(smooth = true) {
+  const wrap = document.getElementById("canvas-wrap");
+  wrap.scrollTo({ top: wrap.scrollHeight, behavior: smooth ? "smooth" : "instant" });
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // Demo data – synthetic 3-node election + log append scenario
 // ═══════════════════════════════════════════════════════════════════
 function loadDemo() {
+  prevMaxLts = Infinity;
   allEvents = generateDemoEvents();
   applyFilters();
+  scrollToLatest(false);
   lastLoadSource = { type: 'demo' };
   enableRefreshControls(false);
   markUpdated();
@@ -507,7 +518,7 @@ function render() {
   const PAD_LEFT   = 60;
   const PAD_RIGHT  = 40;
   const NODE_SPACE = 180;  // horizontal gap between timelines
-  const PX_PER_TS  = 28;   // pixels per Lamport tick
+  const ROW_HEIGHT = 44;   // pixels per unique Lamport-tick row (compressed layout)
   const MARGIN_BOT = 40;
 
   // Gather node IDs from events (sorted)
@@ -516,14 +527,16 @@ function render() {
   const nodeX = {};
   nodeIds.forEach((nid, i) => { nodeX[nid] = PAD_LEFT + i * NODE_SPACE; });
 
-  // Lamport range
-  const allLTS = filtered.map(e => e.lamport_ts);
-  const ltsMin = Math.min(...allLTS);
-  const ltsMax = Math.max(...allLTS);
-  const Y = lts => PAD_TOP + (lts - ltsMin) * PX_PER_TS;
+  // ── Compressed Y axis: rank-based, not linear LTS ──────────────
+  // Each unique Lamport timestamp gets one fixed-height row.
+  // Long idle gaps between events are collapsed — the diagram only
+  // grows when something actually happens.
+  const uniqueLts = [...new Set(filtered.map(e => e.lamport_ts))].sort((a,b) => a-b);
+  const ltsRank   = new Map(uniqueLts.map((lts, i) => [lts, i]));
+  const Y = lts => PAD_TOP + (ltsRank.get(lts) ?? 0) * ROW_HEIGHT;
 
   const W = PAD_LEFT + (N - 1) * NODE_SPACE + PAD_RIGHT;
-  const H = PAD_TOP + (ltsMax - ltsMin + 2) * PX_PER_TS + MARGIN_BOT;
+  const H = PAD_TOP + uniqueLts.length * ROW_HEIGHT + MARGIN_BOT;
 
   const svg = d3.select(wrap).append("svg")
     .attr("class", "diagram")
@@ -650,14 +663,15 @@ function render() {
         event.stopPropagation();
       });
 
-  // Lamport tick labels on left margin
+  // Lamport tick labels — show every Nth unique-LTS row so labels don't crowd
   const tickG = svg.append("g").attr("class","time-axis");
-  const tickStep = Math.max(1, Math.round((ltsMax - ltsMin) / 20));
-  for (let lts = ltsMin; lts <= ltsMax; lts += tickStep) {
+  const tickEvery = Math.max(1, Math.round(uniqueLts.length / 20));
+  uniqueLts.forEach((lts, i) => {
+    if (i % tickEvery !== 0) return;
     const y = Y(lts);
     tickG.append("line").attr("x1", PAD_LEFT - 8).attr("x2", W - PAD_RIGHT).attr("y1",y).attr("y2",y);
     tickG.append("text").attr("x", PAD_LEFT - 12).attr("y", y + 4).attr("text-anchor","end").text(lts);
-  }
+  });
 
   buildLegend();
 
