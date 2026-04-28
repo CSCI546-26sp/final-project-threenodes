@@ -25,6 +25,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
@@ -116,6 +117,7 @@ public:
   explicit RaftEventLogger(uint64_t node_id,
                            const std::string &log_dir = "logs")
       : node_id_(node_id) {
+    std::filesystem::create_directories(log_dir);
     std::string path =
         log_dir + "/raft_scope_node_" + std::to_string(node_id) + ".jsonl";
     file_.open(path, std::ios::out | std::ios::trunc);

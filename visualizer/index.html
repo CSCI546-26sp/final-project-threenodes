@@ -69,6 +69,28 @@
     /* ─── Tooltip ─────────────────────────────────────────────────── */
     #tooltip { position: fixed; background: #1a1d27; border: 1px solid #3a3d4a; border-radius: 6px; padding: 8px 12px; font-size: 0.74rem; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 9999; max-width: 260px; line-height: 1.7; }
     #tooltip .t-type { font-weight: 700; font-size: 0.82rem; margin-bottom: 4px; }
+
+    /* ─── Live update visuals ────────────────────────────────────── */
+    @keyframes pop-in {
+      0%   { transform: scale(3); opacity: 0; }
+      60%  { transform: scale(1.25); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .new-event { animation: pop-in 0.55s ease-out forwards; transform-box: fill-box; transform-origin: center; }
+
+    @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+    #live-dot { width: 7px; height: 7px; border-radius: 50%; background: #34d399; flex-shrink: 0;
+                animation: live-pulse 1.1s ease-in-out infinite; display: none; }
+    #live-dot.on { display: inline-block; }
+
+    #event-count { font-size: 0.72rem; color: #3d4a5c; white-space: nowrap; font-family: monospace; }
+
+    #toast { position: fixed; bottom: 56px; left: 50%; transform: translateX(-50%) translateY(8px);
+             background: #0d1f14; border: 1px solid #34d399; color: #34d399;
+             padding: 5px 18px; border-radius: 20px; font-size: 0.78rem;
+             pointer-events: none; z-index: 9998; opacity: 0;
+             transition: opacity 0.25s, transform 0.25s; white-space: nowrap; }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   </style>
 </head>
 <body>
@@ -116,10 +138,12 @@
 
   <div class="sep"></div>
   <button id="refresh-btn" class="secondary" onclick="refreshData()" disabled title="Re-fetch the last loaded source">↺ Refresh</button>
-  <label id="auto-refresh-label" title="Automatically re-fetch every 5 s (URL loads only)">
+  <label id="auto-refresh-label" title="Automatically re-fetch every 2 s (URL loads only)">
+    <span id="live-dot"></span>
     <input type="checkbox" id="auto-refresh-chk" onchange="toggleAutoRefresh(this.checked)" disabled />
-    Auto (5s)
+    Auto (2s)
   </label>
+  <span id="event-count"></span>
   <span id="last-updated"></span>
 
 </div>
@@ -146,6 +170,7 @@
 </div>
 
 <div id="tooltip"></div>
+<div id="toast"></div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════
@@ -188,6 +213,7 @@ let selected  = null;  // currently selected event
 // Refresh state
 let lastLoadSource = null;   // { type:'url', pattern } | { type:'files', files }
 let pollTimerId    = null;
+let prevMaxLts     = Infinity; // lamport_ts threshold — events above this are "new" and animate
 
 // ═══════════════════════════════════════════════════════════════════
 // File loading
@@ -216,6 +242,7 @@ async function loadFiles(files) {
     }
   }
   if (events.length === 0) { alert("No valid events found in the selected files."); return; }
+  prevMaxLts = Infinity; // treat all as existing — no pop animation on first load
   allEvents = events;
   applyFilters();
   lastLoadSource = { type: 'files', files };
@@ -238,6 +265,7 @@ async function loadFromUrl() {
     "  http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl"
   );
   if (!pattern) return;
+  prevMaxLts = Infinity; // no animation on initial URL load
   const ok = await loadFromPattern(pattern, true);
   if (ok) {
     lastLoadSource = { type: 'url', pattern };
@@ -258,7 +286,9 @@ async function loadFromPattern(pattern, showAlert = false) {
 
   for (const url of urls) {
     try {
-      const resp = await fetch(url);
+      // cache:'no-store' forces the browser to always hit the server —
+      // without this, browsers can serve a stale cached JSONL on refresh.
+      const resp = await fetch(url, { cache: 'no-store' });
       if (!resp.ok) continue;   // 404 = node doesn't exist, skip silently
       const text = await resp.text();
       let count = 0;
@@ -287,13 +317,21 @@ async function loadFromPattern(pattern, showAlert = false) {
 // ═══════════════════════════════════════════════════════════════════
 // Refresh helpers
 // ═══════════════════════════════════════════════════════════════════
+let toastTimer = null;
+
 async function refreshData() {
   if (!lastLoadSource) return;
+
+  const countBefore = allEvents.length;
+
   if (lastLoadSource.type === 'url') {
+    // Snapshot prevMaxLts so render() can animate truly new dots.
+    prevMaxLts = allEvents.length
+      ? Math.max(...allEvents.map(e => e.lamport_ts))
+      : -1;
     await loadFromPattern(lastLoadSource.pattern, false);
-    markUpdated();
   } else if (lastLoadSource.type === 'files') {
-    // Re-read File objects (still in memory from the original pick)
+    prevMaxLts = Infinity; // file re-reads don't animate
     const files = lastLoadSource.files;
     const texts = await Promise.all(files.map(f => f.text()));
     const events = [];
@@ -305,23 +343,29 @@ async function refreshData() {
       }
     }
     if (events.length > 0) { allEvents = events; applyFilters(); }
-    markUpdated();
   }
+
+  const added = allEvents.length - countBefore;
+  if (added > 0) showToast(`+${added} new event${added === 1 ? '' : 's'}`);
+  markUpdated();
 }
 
 function toggleAutoRefresh(on) {
   const label = document.getElementById("auto-refresh-label");
+  const dot   = document.getElementById("live-dot");
   if (on) {
-    pollTimerId = setInterval(refreshData, 5000);
+    pollTimerId = setInterval(refreshData, 2000);
     label.classList.add("active");
+    dot.classList.add("on");
   } else {
     clearInterval(pollTimerId);
     pollTimerId = null;
     label.classList.remove("active");
+    dot.classList.remove("on");
   }
 }
 
-// supportsAuto: URL sources can auto-refresh; file sources cannot (CORS-free but stale handle)
+// supportsAuto: URL sources can auto-refresh; file sources cannot
 function enableRefreshControls(supportsAuto) {
   const btn = document.getElementById("refresh-btn");
   const chk = document.getElementById("auto-refresh-chk");
@@ -339,7 +383,19 @@ function markUpdated() {
   const hh = String(now.getHours()).padStart(2,"0");
   const mm = String(now.getMinutes()).padStart(2,"0");
   const ss = String(now.getSeconds()).padStart(2,"0");
-  el.textContent = `Updated ${hh}:${mm}:${ss}`;
+  el.textContent = `${hh}:${mm}:${ss} · ${allEvents.length} events`;
+}
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function updateEventCount() {
+  markUpdated(); // markUpdated now shows both time and event count
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -569,10 +625,11 @@ function render() {
 
   // ── Events ───────────────────────────────────────────────────────
   const evG = svg.append("g").attr("class", "events");
+  const threshold = prevMaxLts; // capture at render time
   evG.selectAll("circle")
     .data(filtered)
     .join("circle")
-      .attr("class", "event-circle")
+      .attr("class", d => "event-circle" + (d.lamport_ts > threshold ? " new-event" : ""))
       .attr("cx", d => nodeX[d.node_id] ?? 0)
       .attr("cy", d => Y(d.lamport_ts))
       .attr("r", 7)

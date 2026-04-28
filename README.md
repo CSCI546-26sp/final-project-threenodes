@@ -92,12 +92,25 @@ Type `r` at the prompt and press Enter to start the nodes.
 > k          ← kill everything when done
 ```
 
-**4. View the logs** — the file server must still be running on port 8080. Click `🌐 Load from URL…` in the visualizer and enter:
+**4. View the logs live** — the file server must still be running on port 8080. Click `🌐 Load from URL…` in the visualizer and enter:
 ```
 http://192.168.2.3:8080/build/logs/raft_scope_node_*.jsonl
 ```
 
-Check **Auto (5s)** to have the diagram refresh automatically as new events are written — useful for watching a live cluster in real time. Or click **↺ Refresh** to pull the latest events on demand.
+> **Important:** multinode must be run from inside `build/` (step 2 above does this). The log files are written to `build/logs/` relative to that working directory — the path above matches.
+
+Then check **Auto (2s)** in the visualizer. The diagram will refresh every 2 seconds and newly arrived event dots will animate with a pop effect. A `+N new events` toast appears whenever the diagram grows.
+
+**Watch it update live — run commands and see the diagram change:**
+```
+> r          ← start — initial election appears within 2 s
+> dis 0      ← new election fires; you'll see become_candidate + vote arrows
+> conn 0     ← node 0 rejoins; become_follower dot appears
+> prop hello ← log_append arrows + commit dot appear on the leader
+> k          ← done; uncheck Auto (2s)
+```
+
+Each command generates new events within a second; the next Auto poll will show them as animated dots.
 
 ---
 
