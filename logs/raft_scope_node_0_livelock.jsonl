@@ -1,0 +1,13 @@
+{"lamport_ts":1,"wall_time_us":1777346634236788,"node_id":0,"event_type":"become_candidate","from_node":0,"to_node":-1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":2,"wall_time_us":1777346634236986,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":2,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":3,"wall_time_us":1777346634237067,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":5,"wall_time_us":1777346634238802,"node_id":0,"event_type":"vote_recv","from_node":1,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":6,"wall_time_us":1777346634238834,"node_id":0,"event_type":"vote_denied","from_node":0,"to_node":1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":8,"wall_time_us":1777346634239976,"node_id":0,"event_type":"vote_recv","from_node":2,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":9,"wall_time_us":1777346634240005,"node_id":0,"event_type":"vote_denied","from_node":0,"to_node":2,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":11,"wall_time_us":1777346634240841,"node_id":0,"event_type":"vote_denied_recv","from_node":1,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":13,"wall_time_us":1777346634241972,"node_id":0,"event_type":"vote_denied_recv","from_node":2,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":17,"wall_time_us":1777346634659353,"node_id":0,"event_type":"vote_recv","from_node":2,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":18,"wall_time_us":1777346634659479,"node_id":0,"event_type":"become_follower","from_node":0,"to_node":-1,"term":2,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":19,"wall_time_us":1777346634659483,"node_id":0,"event_type":"vote_granted","from_node":0,"to_node":2,"term":2,"log_index":0,"commit_index":0,"role":"follower"}
+{"lamport_ts":482,"wall_time_us":1777346639225912,"node_id":0,"event_type":"node_crash","from_node":0,"to_node":-1,"term":2,"log_index":0,"commit_index":0,"role":"follower"}

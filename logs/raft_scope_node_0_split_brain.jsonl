@@ -1,0 +1,16 @@
+{"lamport_ts":1,"wall_time_us":1777346614309181,"node_id":0,"event_type":"become_candidate","from_node":0,"to_node":-1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":2,"wall_time_us":1777346614309888,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":3,"wall_time_us":1777346614310055,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":2,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":5,"wall_time_us":1777346614311141,"node_id":0,"event_type":"vote_recv","from_node":2,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":6,"wall_time_us":1777346614311153,"node_id":0,"event_type":"vote_denied","from_node":0,"to_node":2,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":8,"wall_time_us":1777346614311245,"node_id":0,"event_type":"vote_recv","from_node":1,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":9,"wall_time_us":1777346614311250,"node_id":0,"event_type":"vote_denied","from_node":0,"to_node":1,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":11,"wall_time_us":1777346614313515,"node_id":0,"event_type":"vote_denied_recv","from_node":1,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":13,"wall_time_us":1777346614314462,"node_id":0,"event_type":"vote_denied_recv","from_node":2,"to_node":0,"term":1,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":14,"wall_time_us":1777346614701853,"node_id":0,"event_type":"become_candidate","from_node":0,"to_node":-1,"term":2,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":15,"wall_time_us":1777346614702088,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":2,"term":2,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":16,"wall_time_us":1777346614702124,"node_id":0,"event_type":"vote_request","from_node":0,"to_node":1,"term":2,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":21,"wall_time_us":1777346614703806,"node_id":0,"event_type":"vote_granted_recv","from_node":2,"to_node":0,"term":2,"log_index":0,"commit_index":0,"role":"candidate"}
+{"lamport_ts":22,"wall_time_us":1777346614703818,"node_id":0,"event_type":"leader_change","from_node":0,"to_node":-1,"term":2,"log_index":0,"commit_index":0,"role":"leader"}
+{"lamport_ts":359,"wall_time_us":1777346618351871,"node_id":0,"event_type":"become_follower","from_node":0,"to_node":-1,"term":3,"log_index":0,"commit_index":0,"role":"leader"}
+{"lamport_ts":458,"wall_time_us":1777346619305956,"node_id":0,"event_type":"node_crash","from_node":0,"to_node":-1,"term":3,"log_index":0,"commit_index":0,"role":"follower"}

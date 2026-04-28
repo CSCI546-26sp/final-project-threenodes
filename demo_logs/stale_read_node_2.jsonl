@@ -1,6 +1,6 @@
-{"lamport_ts": 6, "wall_time_us": 1777246656335993, "node_id": 2, "event_type": "vote_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
-{"lamport_ts": 7, "wall_time_us": 1777246656340993, "node_id": 2, "event_type": "vote_granted", "from_node": 2, "to_node": 0, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
-{"lamport_ts": 13, "wall_time_us": 1777246656410993, "node_id": 2, "event_type": "log_append_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 1, "commit_index": 0, "role": "follower"}
-{"lamport_ts": 16, "wall_time_us": 1777246656435993, "node_id": 2, "event_type": "commit", "from_node": 2, "to_node": -1, "term": 1, "log_index": 1, "commit_index": 1, "role": "follower"}
-{"lamport_ts": 19, "wall_time_us": 1777246656530993, "node_id": 2, "event_type": "log_append_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 2, "commit_index": 1, "role": "follower"}
-{"lamport_ts": 21, "wall_time_us": 1777246656550993, "node_id": 2, "event_type": "commit", "from_node": 2, "to_node": -1, "term": 1, "log_index": 2, "commit_index": 2, "role": "follower"}
+{"lamport_ts": 6, "wall_time_us": 1777344086400876, "node_id": 2, "event_type": "vote_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 7, "wall_time_us": 1777344086405876, "node_id": 2, "event_type": "vote_granted", "from_node": 2, "to_node": 0, "term": 1, "log_index": 0, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 13, "wall_time_us": 1777344086475876, "node_id": 2, "event_type": "log_append_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 1, "commit_index": 0, "role": "follower"}
+{"lamport_ts": 16, "wall_time_us": 1777344086500876, "node_id": 2, "event_type": "commit", "from_node": 2, "to_node": -1, "term": 1, "log_index": 1, "commit_index": 1, "role": "follower"}
+{"lamport_ts": 19, "wall_time_us": 1777344086595876, "node_id": 2, "event_type": "log_append_recv", "from_node": 0, "to_node": 2, "term": 1, "log_index": 2, "commit_index": 1, "role": "follower"}
+{"lamport_ts": 21, "wall_time_us": 1777344086615876, "node_id": 2, "event_type": "commit", "from_node": 2, "to_node": -1, "term": 1, "log_index": 2, "commit_index": 2, "role": "follower"}

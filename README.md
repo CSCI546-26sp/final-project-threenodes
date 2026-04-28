@@ -22,6 +22,10 @@ The demo logs are already in the repo. This is the fastest way to see RaftScope.
 cd /home/ubuntu/final_project/lab1-akshay-karthik
 python3 -m http.server 8080
 ```
+Press `Ctrl+C` to stop it, or from another terminal:
+```bash
+pkill -f "http.server 8080"
+```
 
 **On your Mac — open the visualizer in a browser:**
 ```
